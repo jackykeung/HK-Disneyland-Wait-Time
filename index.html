@@ -889,6 +889,23 @@ function nextSec(){
 
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+function drawBasePins(){
+  if(!map) return;
+  oldLayers.forEach(m=>{ if(m){ try{map.removeLayer(m);}catch(e){} } });
+  oldLayers.clear();
+  const seen=new Set();
+  for(const name in COORDS){
+    const [lat,lng]=COORDS[name];
+    const key=(+lat).toFixed(5)+','+(+lng).toFixed(5);
+    if(seen.has(key)) continue; seen.add(key);
+    const mk=L.circleMarker([lat,lng],{radius:9,color:'#fff',weight:1.5,fillColor:'#5b6675',fillOpacity:.92});
+    mk.bindPopup('<strong>'+esc(name)+'</strong><br><small>No live data yet</small>');
+    mk.addTo(map);
+    oldLayers.set(name,mk);
+  }
+  const pts=Object.values(COORDS);
+  if(pts.length){ map.fitBounds(L.latLngBounds(pts),{padding:[48,48],maxZoom:17}); }
+}
 function updateMap(rides){
   if(!map) return;
   // refresh the countdown text as well
@@ -945,6 +962,7 @@ function refresh(){
     render();
   }).catch(e=>{
     document.getElementById('meta').innerHTML='<span class="err">Live feed unreachable: '+esc(e.message)+'</span>';
+    if(!cur) drawBasePins();  // park map stays visible even when the feed can't be reached
   });
 }
 
@@ -952,6 +970,7 @@ function init(){
   map=L.map('map',{zoomControl:true});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'&copy; OpenStreetMap contributors', maxZoom:19}).addTo(map);
+  drawBasePins();  // show all rides immediately; live data recolours them when it arrives
   refresh();
   setInterval(()=>{ document.getElementById('meta').innerHTML=
       'Updated <b>'+new Date().toLocaleTimeString()+'</b> · auto-refresh in <b>'+nextSec()+'s</b>'; },1000);
