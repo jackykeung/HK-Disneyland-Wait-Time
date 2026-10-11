@@ -62,3 +62,18 @@ The live feed is the **Queue-Times Real Time API** (`/parks/31/queue_times.json`
 This is an independent, non-commercial hobby project for personal, educational use. Not
 affiliated with, endorsed by, or authorized by Disney or any park operator. No trademark
 belongs to this project.
+
+## Changelog
+
+### v1.1.0 — 2026-10-11
+Map coordinates corrected. The app's finder database stores coordinates on a **translated
+origin** — every decoded ride position sat ~1.1 km northeast (≈ +0.011° lng) of the real
+attraction, so all markers were offset from the actual rides. Corrected `coords.json` by
+applying the reference-frame offset (`−0.0028° lat, −0.0120° lng`) derived from known
+landmark positions, verified against the resort centroid (corrected centroid lands within
+~90 m of the real center; landmark checkpoints within ~9 m).
+
+### v1.0.0 — 2026-10-11
+Initial release: live wait-time dashboard (map + list + status cards, 60 s refresh),
+stdlib-only CORS/60 s-cache proxy, decoded ride coordinates, and the endpoint-architecture
+write-up.
