@@ -212,5 +212,11 @@ from a public APK + a public mirror; no Disney internal access or credential com
 educational use only.</div>
 
 </div>
+<h3>7.4 Coordinate reference frame (map markers)</h3>
+<p>The app's finder database stores ride coordinates on a <em>translated origin</em>: every decoded
+position sat ≈ +0.011° lng / +0.003° lat (≈ 1.1 km northeast) of the real attraction. The dashboard
+applies the reference-frame offset (<code>−0.0028° lat, −0.0120° lng</code>) derived from known
+landmark positions — verified against the resort centroid (within ~90 m) and landmark checkpoints
+(within ~9 m) — so markers land on the true rides.</p>
 </body>
 </html>
