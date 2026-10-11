@@ -65,6 +65,13 @@ belongs to this project.
 
 ## Changelog
 
+### v1.1.1 — 2026-10-11
+The map now always shows ride pins. Previously markers were drawn only after a
+successful feed fetch, so when the feed was unreachable (or the park closed, and the
+external CORS relays were down) the map rendered empty. `drawBasePins()` renders all
+rides from the static `COORDS` table as grey dots immediately, recoloured by live data
+when it arrives. The park map is never blank.
+
 ### v1.1.0 — 2026-10-11
 Map coordinates corrected. The app's finder database stores coordinates on a **translated
 origin** — every decoded ride position sat ~1.1 km northeast (≈ +0.011° lng) of the real
