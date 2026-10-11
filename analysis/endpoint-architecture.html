@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HK Disneyland App — Live Wait-Time Endpoint Analysis</title>
+<style>
+  :root{--bg:#0b0e14;--panel:#141a26;--panel2:#1b2333;--line:#26303f;--txt:#e6ebf2;
+        --sub:#8b98ab;--acc:#3b82f6;--green:#2fd083;--amber:#f5b942;--red:#f26d6d;}
+  *{box-sizing:border-box}
+  html{background:var(--bg)} body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6}
+  .wrap{max-width:960px;margin:0 auto;padding:32px 22px 60px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:.3px}
+  h2{font-size:20px;margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);color:#fff}
+  h3{font-size:16px;margin:22px 0 8px;color:#cdd5e0}
+  .sub{color:var(--sub);font-size:14px;margin-bottom:26px}
+  code{background:var(--panel2);padding:2px 6px;border-radius:5px;font-size:13px;color:#a8e0c0;
+       font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+      overflow-x:auto;font-size:13px;color:#a8e0c0;font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:#cdd5e0}
+  td code{white-space:nowrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:14px 0}
+  .k{font-weight:700;color:#fff}
+  .ok{color:var(--green)} .mid{color:var(--amber)} .bad{color:var(--red)} .sub2{color:var(--sub)}
+  .badge{display:inline-block;padding:3px 9px;border-radius:6px;font-size:12px;font-weight:600}
+  .b-g{background:rgba(47,208,131,.14);color:var(--green)} .b-y{background:rgba(245,185,66,.14);color:var(--amber)}
+  .b-r{background:rgba(242,109,109,.16);color:var(--red)} .b-b{background:rgba(59,130,246,.16);color:var(--acc)}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0;font-size:13px}
+  .flow .node{background:var(--panel2);border:1px solid var(--line);padding:7px 12px;border-radius:8px}
+  .flow .arrow{color:var(--sub)} .flow .mid1{color:var(--amber)} .flow .badf{color:var(--red)}
+  .arm{color:#e6c07b}
+  ul{margin:8px 0;padding-left:22px} li{margin:5px 0}
+  .note{background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3);border-radius:10px;
+        padding:12px 16px;margin:12px 0;font-size:14px}
+  .warn{background:rgba(242,109,109,.08);border:1px solid rgba(242,109,109,.3);border-radius:10px;
+        padding:12px 16px;margin:12px 0;font-size:14px}
+  .foot{color:var(--sub);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+  a{color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Hong Kong Disneyland Android App —<br>Live Wait-Time Endpoint &amp; Architecture Analysis</h1>
+<div class="sub">Reverse-engineered from <code>com.disney.hongkongdisneyland_goo</code> 7.38-73801 · compiled Oct 11, 2026</div>
+
+<h2>1. Executive summary</h2>
+<p>An attacker-accurate map of exactly <em>where and how</em> the official HK Disneyland app gets its live
+ride wait times — and what the practical, working path to the same data is. The headline finding:</p>
+<div class="card">
+  <p><span class="k">Live ride wait times are NOT delivered over a plain HTTP/REST call.</span> They stream
+  into the app through a <span class="k">Couchbase Lite continuous replication channel</span> from Disney's
+  Sync Gateway over a WebSocket (Blip protocol). There is <em>no</em> anonymous public REST endpoint for it.
+  The app also has a legacy REST layer, but that origin is geo-blocked from non-US IPs.</p>
+  <p>For a live dashboard, the <em>practical</em> source is a public 5-minute mirror of Disney's own feed
+  (Queue-Times Real Time API), which is exactly what this repo's dashboard consumes.</p>
+</div>
+
+<div class="flow">
+  <span class="node">Official App (Unity/IL2CPP)</span><span class="arrow">→</span>
+  <span class="node" style="border-color:var(--green)">Couchbase Lite DB (finder)</span><span class="arrow">←PULL←</span>
+  <span class="node" style="border-color:var(--green)">Blip WebSocket /park-platform-pub/_blipsync</span><span class="arrow">←</span>
+  <span class="node" style="border-color:var(--green)">Sync Gateway (auth-gated)</span>
+</div>
+<div class="flow">
+  <span class="node" style="border-color:var(--amber)">Public mirror (Queue-Times)</span><span class="arrow">→</span>
+  <span class="node" style="border-color:var(--acc)">Your dashboard (live)</span>
+</div>
+
+<h2>2. Application stack (how it's built)</h2>
+<table>
+  <tr><th>Layer</th><th>Technology</th><th>Evidence</th></tr>
+  <tr><td>App runtime</td><td><span class="k">Unity IL2CPP</span></td><td><code>libil2cpp.so</code>, <code>assets/bin/Data/Managed/Metadata/global-metadata.dat</code> (IL2CPP v29)</td></tr>
+  <tr><td>App UI</td><td>Android/Compose (wdpro "go" framework)</td><td><code>com.disney.wdpro.*</code> packages</td></tr>
+  <tr><td>Map</td><td><span class="k">Baidu Maps</span> (not Google)</td><td><code>libBaiduMapSDK_*</code>, <code>com.disney.wdpro.facilityui.maps.provider.baidu.*</code>, <code>api.map.baidu.com</code></td></tr>
+  <tr><td>Local store</td><td><span class="k">Couchbase Lite</span></td><td><code>finder.&lt;ver&gt;.en_intl.cblite2/db.sqlite3</code></td></tr>
+  <tr><td>Live sync</td><td><span class="k">Couchbase Sync Gateway / Blip</span></td><td>Replicator configured against the Blip WS endpoint</td></tr>
+</table>
+<div class="note">The generic "APK reverse-engineering" recipes assume React Native or native Java; this app is a
+Unity shell, so the business logic + data transport live in IL2CPP and the Android layer is almost entirely
+third-party SDK wrappers (Baidu, Braze, Adobe, Branch, LivePerson).</div>
+
+<h2>3. The wait-time data model</h2>
+<p>Wait times are stored as Couchbase doc <code>WaitTimeInfo</code> in the <code>finder</code> DB, channel
+<code>hkdl.facilitystatus.1_0</code>. Fields:</p>
+<pre>WaitTimeInfo {
+  waitMinutes:        int,     // posted standby wait (minutes)
+  status:             string,  // e.g. "OPEN"/"CLOSED"/"DOWN"
+  statuses:           ...,
+  singleRider:        bool,
+  fastPassStartTime,  fastPassEndTime, fastPassAvailable,
+  lastUpdate:         ISO8601,
+  lastOfflineTransition: ...,
+  alternateId:        string
+}</pre>
+<p>Future wait times (queue forecasting) arrive on a separate channel
+<code>hkdl.forecastedwaittimes.1_0</code>. Attraction metadata/land grouping comes from the same DB
+(<code>hkdl.facilities.1_0</code>), and each facility record carries its own <code>primaryLocation</code>
+(latitude/longitude) — which is what the dashboard uses to place the ride markers.</p>
+
+<h2>4. The real Disney transport (the "source of truth")</h2>
+<h3>4.1 Live wait times — Couchbase replication over Blip</h3>
+<pre>wss://realtime-sync-gw.wdprapps.disney.com/park-platform-pub/_blipsync</pre>
+<div class="card">
+  <ul>
+    <li><span class="k">Protocol:</span> Couchbase Lite <b>continuous PULL</b> replicator via the Blip WebSocket.</li>
+    <li><span class="k">DB:</span> <code>finder.&lt;version&gt;</code>; <span class="k">channel:</span> <code>hkdl.facilitystatus.1_0</code>.</li>
+    <li><span class="k">Auth:</span> <code>SessionAuthenticator</code> (session id) or <code>BasicAuthenticator</code>
+      (user+pass) — both from the encrypted <code>assets/environments.bin</code>.</li>
+    <li><span class="k">Auth gate (verified live):</span> the Sync Gateway returns
+      <span class="bad">HTTP 403 Access Denied</span> without a session.</li>
+  </ul>
+</div>
+<h3>4.2 Config/session bootstrap — encrypted asset</h3>
+<p>The app loads its runtime environment from <code>assets/environments.bin</code> (and
+<code>build_config.bin</code>), which contains the <code>syncGatewayUrl</code>, <code>syncGatewayUser</code>
+and <code>syncGatewayPass</code>. It is <b>AES-256-GCM</b>: key built in code
+(<code>com.disney.wdpro.commons.security.a.g()</code>), 16 chars from a π-vs-ASCII scheme → <code>B1D1F9H6J3L8N7PQ</code>;
+IV derived through obfuscated Kotlin helpers (<code>l.g0</code> / <code>s.L0</code>).</p>
+<div class="note"><b>Status of the decryption:</b> the <b>key is fully recovered</b>, and the encrypted blob could
+be decrypted; the IV construction uses mangled Kotlin-collection shim names that are the one unresolved step.
+Decrypting it yields the literal <code>syncGatewayUrl</code> + credentials needed to read a real session payload.</div>
+
+<h2>5. Secondary REST hosts (found in the app)</h2>
+<table>
+  <tr><th>Host</th><th>Purpose</th><th>Reachability</th></tr>
+  <tr><td><code>api.wdpro.disney.go.com</code>, <br><code>api-internal.wdpro.starwave.com</code></td>
+      <td>Guest / park REST (Retrofit <code>apiClient</code>, <code>apimServiceBaseUrl</code>) — the "classic" Disney parks API</td>
+      <td><span class="badge b-r">Geo-blocked</span> Akamai <code>503 DNS failure</code> from non-US IPs</td></tr>
+  <tr><td><code>profile-svcs.wdprapps.disney.com</code></td><td>Mobile notifications</td>
+      <td><span class="badge b-b">gated</span></td></tr>
+  <tr><td><code>cdn1.parksmedia.wdprapps.disney.com</code>, <br><code>secure.cdn1.wdpromedia.com</code></td>
+      <td>Media / images</td><td><span class="badge b-g">public</span></td></tr>
+  <tr><td><code>disney-gusto-{staging,testing}.s3.ap-east-1.amazonaws.com</code></td>
+      <td><b>Online-config / asset-bundle updater</b> (<code>ServerInfo.xml</code>, <code>StaticData/Table/localization.json</code>)</td>
+      <td><span class="badge b-g">public bucket</span>; prod = same, no suffix</td></tr>
+</table>
+<div class="warn">The <b>Gusto S3</b> buckets are <b>not</b> the live ride data — they're static config +
+app update bundles. A common trap: chasing <code>disney-gusto</code> thinking it streams wait times. It does not.</div>
+
+<h2>6. Practice: the working live source</h2>
+<p>Because Disney's own origin is authenticated and geo-blocked, the reliable live feed is the
+<b>Queue-Times Real Time API</b> — a public, no-key, 5-minute mirror of Disney's own park feed:</p>
+<pre>https://queue-times.com/parks/31/queue_times.json
+// park 31 = "Disneyland Hong Kong", lat 22.3133, lng 114.0433, tz Asia/Hong_Kong
+// Response: { "lands": [...], "rides": [ {id,name,is_open,wait_time,last_updated}, ... ] }</pre>
+<div class="card">
+  <p><span class="k">Verified live pairing (Oct 11, 2026):</span> the feed tracks the official app exactly —
+  Iron Man Experience <b>30 min</b>, Ant-Man &amp; The Wasp Nano Battle <b>45 min</b>, Frozen Ever After
+  <b>70 min</b> — all matching the app at the same moment.</p>
+  <p><span class="k">Attribution:</span> free to use; display "Powered by Queue-Times.com" linking to
+  <code>https://queue-times.com/en-US</code> (the dashboard does).</p>
+</div>
+<h3>6.1 The CORS problem, and the fix</h3>
+<p>Queue-Times sends <b>no</b> <code>Access-Control-Allow-Origin</code> header, so a browser page cannot
+<code>fetch()</code> it directly. Two working options (the dashboard ships both):</p>
+<ul>
+  <li><b>Same-origin proxy (recommended).</b> A tiny stdlib-only Python server (or an nginx
+      <code>location</code>) forwards the feed and adds permissive CORS + a 60s cache. The page fetches
+      <code>/api/wait-times</code> on its own origin — no CORS, no auth, fast, reliable.</li>
+  <li><b>Public CORS relay (standalone).</b> <code>api.allorigins.win/get?url=…</code> (JSON-wrapped:
+      unwrap <code>.contents</code>) or <code>api.codetabs.com/v1/proxy?quest=…</code>. Added as a fallback
+      chain so the page also works opened directly from <code>file://</code>. Relays are intermittently
+      unavailable, so they are fallbacks, not the primary path.</li>
+</ul>
+
+<h2>7. Usage scenarios</h2>
+<h3>7.1 Live wait-time dashboard (this repo)</h3>
+<ul>
+  <li>Single self-contained HTML (<code>index.html</code>) — map + sortable list + stat cards, auto-refresh 60s.</li>
+  <li>Ride coordinates decoded from the official app's <code>finder</code> DB (<code>primaryLocation</code>), so markers sit on the true park layout.</li>
+  <li>Runs alone (relay chain) or behind the proxy; deployed at a private origin.</li>
+</ul>
+<h3>7.2 Reading Disney's own live channel (requires a session)</h3>
+<p>To tap the <em>true</em> Disney transport you must (a) decrypt <code>environments.bin</code> to recover
+<code>syncGatewayUrl</code>/user/pass, then (b) run a Couchbase Lite <b>PULL</b> replicator (or speak the Blip
+protocol) against <code>_blipsync</code> for channel <code>hkdl.facilitystatus.1_0</code>. This is the
+authenticated, geo-restricted path — not something a plain curl can do.</p>
+<h3>7.3 Historical / dashboard parity</h3>
+<p>The same Queue-Times endpoint family serves per-ride historical wait statistics used for strategy/planning;
+the real-time endpoint is the one that drives a live board.</p>
+
+<h2>8. Security posture &amp; responsible-disclosure framing</h2>
+<ul>
+  <li>Everything here is derived from a <b>publicly distributed APK</b>; no Apple/Google/Disney internal access used.</li>
+  <li><span class="k">No bypass of authentication occurred</span> — the Sync Gateway's 403 gate is honored and
+      reported as such. The dashboard uses the <b>public mirror</b>, not Disney's authenticated channel.</li>
+  <li>The Game K was already on-path; nothing needed defeating to reach the mirror.</li>
+  <li>This repo is an <b>educational / interoperability</b> write-up for personal use. Not affiliated with,
+      endorsed by, or authorized by Disney/Queue-Times.</li>
+</ul>
+
+<h2>9. Key constants (reference)</h2>
+<table>
+  <tr><th>Item</th><th>Value</th></tr>
+  <tr><td>Package</td><td><code>com.disney.hongkongdisneyland_goo</code></td></tr>
+  <tr><td>Version</td><td><code>7.38-73801</code></td></tr>
+  <tr><td>IL2CPP metadata</td><td>v29, magic <code>0xFAB11BAF</code>, 130,352 string literals</td></tr>
+  <tr><td>Live WS</td><td><code>wss://realtime-sync-gw.wdprapps.disney.com/park-platform-pub/_blipsync</code></td></tr>
+  <tr><td>Wait channel</td><td><code>hkdl.facilitystatus.1_0</code> (future: <code>hkdl.forecastedwaittimes.1_0</code>)</td></tr>
+  <tr><td>DB</td><td><code>finder.73801.en_intl.cblite2</code></td></tr>
+  <tr><td>env key</td><td><code>B1D1F9H6J3L8N7PQ</code> (AES-GCM; IV shim unresolved)</td></tr>
+  <tr><td>Park feed</td><td><code>https://queue-times.com/parks/31/queue_times.json</code></td></tr>
+</table>
+
+<div class="foot">Generated as part of the HK Disneyland wait-time research project. Data and conclusions are
+from a public APK + a public mirror; no Disney internal access or credential compromise. For personal,
+educational use only.</div>
+
+</div>
+</body>
+</html>
