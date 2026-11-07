@@ -34,12 +34,21 @@ TOOL = (
 '  .htool{display:flex;align-items:center;gap:16px;margin:10px 0 0;flex-wrap:wrap}\n'
 '  .htoggle{font-size:13.5px;color:#cfd7e3;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}\n'
 '  .htoggle input{transform:scale(1.15);cursor:pointer}\n'
-'  .hlegend{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#9aa8bd}\n'
-'  .hgrad{width:150px;height:12px;border-radius:6px;background:linear-gradient(90deg,#2b6cff,#3ac6d0,#7bd04a,#f5b942,#f28c28,#ff3d3d)}\n'
+'  .hlegend{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#9aa8bd;flex-wrap:wrap}\n'
+'  .hleg{display:flex;align-items:center;gap:4px;white-space:nowrap}\n'
+'  .hsw{width:15px;height:15px;border-radius:5px;display:inline-block;border:1px solid rgba(0,0,0,.25)}\n'
 '  </style>\n'
 '  <div class="htool">\n'
 '    <label class="htoggle"><input type="checkbox" id="heatToggle" checked> Crowd heatmap</label>\n'
-'    <div class="hlegend">Low<div class="hgrad"></div>High &middot; wait</div>\n'
+'    <div class="hlegend">\n'
+'      <span class="hleg"><span class="hsw" style="background:#ffffff"></span>Not operating</span>\n'
+'      <span class="hleg"><span class="hsw" style="background:#2fd083"></span>&lt;15</span>\n'
+'      <span class="hleg"><span class="hsw" style="background:#e8d63a"></span>15-30</span>\n'
+'      <span class="hleg"><span class="hsw" style="background:#f5872a"></span>30-40</span>\n'
+'      <span class="hleg"><span class="hsw" style="background:#e23c3c"></span>40-60</span>\n'
+'      <span class="hleg"><span class="hsw" style="background:#7a0f0f"></span>60+</span>\n'
+'      <span class="hleg" style="opacity:.75">min wait</span>\n'
+'    </div>\n'
 '  </div>\n'
 )
 a = must("  <div class=\"layout\">")
@@ -89,23 +98,60 @@ src = src.replace(a, """  if(latlngs.length){
 a = must("\ninit();")
 src = src.replace(a, """
 (function(){
-  const t=document.getElementById('heatToggle'), g=document.querySelector('.hlegend');
+  const t=document.getElementById('heatToggle');
   if(t) t.addEventListener('change',function(e){
     if(!heat) return;
-    if(e.target.checked){ if(!map.hasLayer(heat)) heat.addTo(map); if(g) g.style.display='flex'; }
-    else { if(map.hasLayer(heat)) map.removeLayer(heat); if(g) g.style.display='none'; }
+    if(e.target.checked){ if(!map.hasLayer(heat)) heat.addTo(map); }
+    else { if(map.hasLayer(heat)) map.removeLayer(heat); }
   });
 })();""" + a, 1)
 
 # NOTE: keep SOURCES as-is in the source; deployment substitutes the feed URL.
 # Default first source stays '/api/wait-times' for the local dev proxy.
 
+# ---- 7. BAND COLOUR SCHEME (user-defined thresholds) ----
+# white = not operating; green 1-15; yellow 15-30; orange 30-40; red 40-60; dark red >=60
+# (0-min open ride treated as green — confirmed with user)
+BCOL = '''
+
+/* Crowd band colour (user thresholds):
+   not operating => white; <15 green; 15-30 yellow; 30-40 orange (30=orange);
+   40-60 red; >=60 dark red. A 0-min open ride is green (least crowded). */
+function bcol(w, open){
+  if(open===false || w==null || w===undefined) return '#ffffff';
+  if(w<15) return '#2fd083';
+  if(w<30) return '#e8d63a';
+  if(w<40) return '#f5872a';
+  if(w<60) return '#e23c3c';
+  return '#7a0f0f';
+}
+function band(w, open){ const c=bcol(w,open); return (c==='#ffffff')?{key:'closed',col:c}:{key:'band',col:c}; }
+'''
+a = must("function colFor(c){ return c==='open'?'#2fd083':(c==='mid'?'#f5b942':(c==='long'?'#f26d6d':'#5b6675')); }")
+src = src.replace(a, BCOL + "\n" + a, 1)
+
+# marker dot colour + a visible ring for white (closed) dots
+a = must("    const col=colFor(p.cls);")
+src = src.replace(a, "    const col=bcol(p.wait,p.open);", 1)
+a = must("    const mk=L.circleMarker([lat,lng],{radius:9,color:'#fff',weight:1.5,fillColor:col,fillOpacity:.92});")
+src = src.replace(a, "    const brd=col==='#ffffff'?'#8a94a6':'#fff';\n    const mk=L.circleMarker([lat,lng],{radius:9,color:brd,weight:1.5,fillColor:col,fillOpacity:.92});", 1)
+
+# list pills -> band colour (tinted bg + coloured text); closed ride = grey pill
+a = must("    const c=waitClass(r.wait_time);\n    const st=r.is_open?'open':'closed';")
+src = src.replace(a, "    const c=bcol(r.wait_time,r.is_open);\n    const st=r.is_open?'open':'closed';", 1)
+a = must("<span class=\"pill ${c}\">${r.is_open&&r.wait_time>0?r.wait_time+'m':(r.is_open?'0m':'—')}</span>")
+src = src.replace(a, "<span class=\"pill\" style=\"background:${c==='#ffffff'?'#eef1f5':'#'+c.slice(1)+'22'};color:${c==='#ffffff'?'#8a94a6':c}\">${r.is_open&&r.wait_time>0?r.wait_time+'m':(r.is_open?(r.wait_time===0?'0m':r.wait_time+'m'):'—')}</span>", 1)
+
+# heat gradient anchors aligned to band boundaries (wait 15/30/40/60 => /60)
+a = must("gradient:{0.15:'#2b6cff',0.35:'#3ac6d0',0.55:'#7bd04a',0.75:'#f5b942',0.9:'#f28c28',1:'#ff3d3d'}")
+src = src.replace(a, "gradient:{0.25:'#2fd083',0.5:'#e8d63a',0.67:'#f5872a',0.85:'#e23c3c',1:'#7a0f0f'}", 1)
+
 open(OUT, "w").write(src)
 print(f"wrote {OUT}  ({orig_size} -> {len(src)} bytes)")
 
-# quick sanity
 import re
-assert "L.heatLayer" in src, "plugin missing"
-assert src.count("updateHeat(pts)") >= 2, "updateHeat not wired"
-assert "id=\"heatToggle\"" in src, "toggle missing"
-print("sanity: plugin + updateHeat(pts) + toggle OK")
+assert "function bcol" in src, "bcol missing"
+assert "bcol(p.wait,p.open)" in src, "marker not wired to band"
+assert "bcol(r.wait_time,r.is_open)" in src, "pill not wired to band"
+assert "0.25:'#2fd083'" in src, "heat gradient not aligned"
+print("sanity: band colours (markers + pills + heat) OK")

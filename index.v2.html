@@ -740,12 +740,21 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .htool{display:flex;align-items:center;gap:16px;margin:10px 0 0;flex-wrap:wrap}
   .htoggle{font-size:13.5px;color:#cfd7e3;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
   .htoggle input{transform:scale(1.15);cursor:pointer}
-  .hlegend{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#9aa8bd}
-  .hgrad{width:150px;height:12px;border-radius:6px;background:linear-gradient(90deg,#2b6cff,#3ac6d0,#7bd04a,#f5b942,#f28c28,#ff3d3d)}
+  .hlegend{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#9aa8bd;flex-wrap:wrap}
+  .hleg{display:flex;align-items:center;gap:4px;white-space:nowrap}
+  .hsw{width:15px;height:15px;border-radius:5px;display:inline-block;border:1px solid rgba(0,0,0,.25)}
   </style>
   <div class="htool">
     <label class="htoggle"><input type="checkbox" id="heatToggle" checked> Crowd heatmap</label>
-    <div class="hlegend">Low<div class="hgrad"></div>High &middot; wait</div>
+    <div class="hlegend">
+      <span class="hleg"><span class="hsw" style="background:#ffffff"></span>Not operating</span>
+      <span class="hleg"><span class="hsw" style="background:#2fd083"></span>&lt;15</span>
+      <span class="hleg"><span class="hsw" style="background:#e8d63a"></span>15-30</span>
+      <span class="hleg"><span class="hsw" style="background:#f5872a"></span>30-40</span>
+      <span class="hleg"><span class="hsw" style="background:#e23c3c"></span>40-60</span>
+      <span class="hleg"><span class="hsw" style="background:#7a0f0f"></span>60+</span>
+      <span class="hleg" style="opacity:.75">min wait</span>
+    </div>
   </div>
   <div class="layout">
     <div id="map"></div>
@@ -894,10 +903,10 @@ function render(){
     return (b.wait_time||0)-(a.wait_time||0);
   });
   list.innerHTML=sorted.map(r=>{
-    const c=waitClass(r.wait_time);
+    const c=bcol(r.wait_time,r.is_open);
     const st=r.is_open?'open':'closed';
     return `<div class="ride"><div class="nm">${esc(r.name)}<small>${r.is_open?'Open':'Closed'} · updated ${new Date(r.last_updated).toLocaleTimeString()}</small></div>`+
-      `<span class="pill ${c}">${r.is_open&&r.wait_time>0?r.wait_time+'m':(r.is_open?'0m':'—')}</span>`+
+      `<span class="pill" style="background:${c==='#ffffff'?'#eef1f5':'#'+c.slice(1)+'22'};color:${c==='#ffffff'?'#8a94a6':c}">${r.is_open&&r.wait_time>0?r.wait_time+'m':(r.is_open?(r.wait_time===0?'0m':r.wait_time+'m'):'—')}</span>`+
       `<span class="status ${st}">${r.is_open?'OPEN':'CLOSED'}</span></div>`;
   }).join('');
 
@@ -964,8 +973,9 @@ function updateMap(rides){
     if(!p.coords) return;
     const [lat,lng]=p.coords;
     latlngs.push([lat,lng]);
-    const col=colFor(p.cls);
-    const mk=L.circleMarker([lat,lng],{radius:9,color:'#fff',weight:1.5,fillColor:col,fillOpacity:.92});
+    const col=bcol(p.wait,p.open);
+    const brd=col==='#ffffff'?'#8a94a6':'#fff';
+    const mk=L.circleMarker([lat,lng],{radius:9,color:brd,weight:1.5,fillColor:col,fillOpacity:.92});
     const w=p.open?(p.wait>0?p.wait+' min':'Open'):'Closed';
     const sub=p.members>1?(' · '+p.members+' spots'):'';
     mk.bindPopup(`<strong>${esc(p.name)}</strong><br><span style="color:${col};font-weight:700">${w}</span>${sub}<br><small>HK Disneyland</small>`);
@@ -977,6 +987,21 @@ function updateMap(rides){
   }
   updateHeat(pts);
 }
+
+
+/* Crowd band colour (user thresholds):
+   not operating => white; <15 green; 15-30 yellow; 30-40 orange (30=orange);
+   40-60 red; >=60 dark red. A 0-min open ride is green (least crowded). */
+function bcol(w, open){
+  if(open===false || w==null || w===undefined) return '#ffffff';
+  if(w<15) return '#2fd083';
+  if(w<30) return '#e8d63a';
+  if(w<40) return '#f5872a';
+  if(w<60) return '#e23c3c';
+  return '#7a0f0f';
+}
+function band(w, open){ const c=bcol(w,open); return (c==='#ffffff')?{key:'closed',col:c}:{key:'band',col:c}; }
+
 function colFor(c){ return c==='open'?'#2fd083':(c==='mid'?'#f5b942':(c==='long'?'#f26d6d':'#5b6675')); }
 
 // try meaningfully-fetch again periodically
@@ -1005,7 +1030,7 @@ function updateHeat(pts){
   });
   if(!heat){
     heat=L.heatLayer(dat,{radius:22,blur:20,maxZoom:18,minOpacity:.35,
-      gradient:{0.15:'#2b6cff',0.35:'#3ac6d0',0.55:'#7bd04a',0.75:'#f5b942',0.9:'#f28c28',1:'#ff3d3d'}});
+      gradient:{0.25:'#2fd083',0.5:'#e8d63a',0.67:'#f5872a',0.85:'#e23c3c',1:'#7a0f0f'}});
     heat.addTo(map);
   } else {
     heat.setLatLngs(dat);
@@ -1025,11 +1050,11 @@ function init(){
   setInterval(refresh,REFRESH);
 }
 (function(){
-  const t=document.getElementById('heatToggle'), g=document.querySelector('.hlegend');
+  const t=document.getElementById('heatToggle');
   if(t) t.addEventListener('change',function(e){
     if(!heat) return;
-    if(e.target.checked){ if(!map.hasLayer(heat)) heat.addTo(map); if(g) g.style.display='flex'; }
-    else { if(map.hasLayer(heat)) map.removeLayer(heat); if(g) g.style.display='none'; }
+    if(e.target.checked){ if(!map.hasLayer(heat)) heat.addTo(map); }
+    else { if(map.hasLayer(heat)) map.removeLayer(heat); }
   });
 })();
 init();
