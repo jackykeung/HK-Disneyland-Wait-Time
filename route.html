@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HK Disneyland — Live Route</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0f1115;color:#e6ebf2}
+.wrap{max-width:1000px;margin:0 auto;padding:14px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{font-size:12.5px;color:#9aa8bd;margin:12px 0}
+.sub select{background:#14181f;color:#e6ebf2;border:1px solid #2a3340;border-radius:7px;padding:3px 8px;font-size:13px}
+.sub .controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+button#recalcBtn{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;margin:0}
+button#locBtn{background:#0e7490;color:#fff;border:0;border-radius:7px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;margin:0}
+button#locBtn:active{background:#155e75}
+#locmsg{font-size:12px;color:#7ee0c8;white-space:nowrap}
+button#recalcBtn:active{background:#1d4ed8}
+button#recalcBtn:active{background:#1d4ed8}
+legend{margin:10px 0 6px;font-weight:600;font-size:13.5px}
+#map{height:380px;border-radius:12px;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.4)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12px;color:#9aa8bd;margin:10px 0}
+.sw{width:14px;height:14px;border-radius:4px;display:inline-block;border:1px solid rgba(0,0,0,.3);vertical-align:-2px}
+.panel{background:#14181f;border:1px solid #232a36;border-radius:10px;padding:10px 12px;margin:8px 0;max-height:230px;overflow:auto}
+.ride{display:flex;align-items:center;gap:9px;padding:5px 4px;border-bottom:1px dashed #232a36;font-size:13.5px}
+.ride:last-child{border-bottom:none}
+.ride label{flex:1;display:flex;align-items:center;gap:8px;cursor:pointer}
+.ride input{transform:scale(1.2);cursor:pointer}
+.ride .w{margin-left:auto;font-size:12px;color:#9aa8bd;white-space:nowrap}
+.ride.excluded label, .ride.excluded .w{color:#5a6676;text-decoration:line-through}
+.item{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid #232a36;border-radius:8px;margin:6px 0;background:#14181f}
+.idx{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff;flex:0 0 24px}
+.ride .n{font-weight:600;font-size:14px}.ride small{color:#9aa8bd;font-size:11.5px}
+.w{font-weight:700;font-size:14px;white-space:nowrap}
+.foot{font-size:11.5px;color:#6b7688;margin-top:14px;line-height:1.5}
+</style></head><body><div class="wrap">
+<h1>🎢 HK Disneyland — Live Route Planner</h1>
+<div class="sub"><span class="controls">You are at: <select id="startSel"></select><button id="recalcBtn" type="button">⟳ Recalculate</button><button id="locBtn" type="button">📍 My location</button><span id="locmsg"></span></span> &nbsp;·&nbsp; auto-updates every 60 s</div>
+<div id="map"></div>
+<div class="legend">Colour: <span class="sw" style="background:#2fd083"></span>&lt;15 · <span class="sw" style="background:#e8d63a"></span>15-30 · <span class="sw" style="background:#f5872a"></span>30-40 · <span class="sw" style="background:#e23c3c"></span>40-60 · <span class="sw" style="background:#7a0f0f"></span>60+</div>
+
+<legend>🚫 Exclude rides (all included by default — <i>untick</i> to skip a ride in the route)</legend>
+<div class="panel" id="rides"></div>
+
+<div class="list" id="list"></div>
+<div class="foot">Live via Queue-Times (mirror of the park feed, same-origin canary, cached 60 s). Route = nearest low-wait included rides (≤15 min preferred, then shortest walk). Estimated finish is approximate (70 m/min walk + current waits + ~4 min per ride).</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const COORDS = {"Big Grizzly Mountain Runaway Mine Cars": [22.310194715586142, 114.04160357660123], "Big Grizzly Mountain Runaway Mine Cars Single Rider": [22.310194715586142, 114.04160357660123], "Mystic Manor": [22.310264542138338, 114.04054532520614], "Toy Soldier Parachute Drop": [22.310438933753034, 114.03960046828782], "Toy Soldier Parachute Drop Single Rider": [22.310438933753034, 114.03960046828782], "RC Racer": [22.310622393872784, 114.03898092220021], "Slinky Dog Spin": [22.310650690347888, 114.03933249137458], "Barrel of Fun": [22.31111445290207, 114.03906674003623], "Liki Tikis": [22.31142651744575, 114.04054034156157], "Jungle River Cruise": [22.311452279017658, 114.04087976966764], "Tarzan's Treehouse": [22.31146786866994, 114.04146616406797], "Rafts to Tarzan's Treehouse": [22.311468181769648, 114.0417673636705], "Fairy Tale Forest": [22.31208329692671, 114.03965318364195], "Mickey's PhilharMagic": [22.312277490422677, 114.0400289742886], "Duffy and Friends Play House": [22.312400417028005, 114.0419632208688], "Meet LinaBell at Duffy and Friends Play House": [22.312290556228014, 114.04196368004362], "Meet StellaLou at Duffy and Friends Play House": [22.312384822173314, 114.0418034141322], "Meet Gelatoni at Duffy and Friends Play House": [22.312384822173314, 114.0418034141322], "Meet 'Olu Mel at Duffy and Friends Play House": [22.31241516210176, 114.04210858059761], "Meet CookieAnn at Duffy and Friends Play House": [22.31241516210176, 114.04210858059761], "Meet Duffy at Duffy and Friends Play House": [22.31248193100659, 114.04190858815632], "Meet ShellieMay at Duffy and Friends Play House": [22.31248193100659, 114.04190858815632], "Dumbo the Flying Elephant": [22.312527612285372, 114.03991572643139], "Frozen Ever After \u2013 Presented by Blue Cross": [22.312532268234666, 114.03854734828958], "Frozen Ever After": [22.312532268234666, 114.03854734828958], "Cinderella Carousel": [22.312712185860885, 114.04025935886786], "Castle of Magical Dreams": [22.312788451653905, 114.04085390743874], "The Royal Reception Hall": [22.31283346802487, 114.04085194213891], "The Many Adventures of Winnie the Pooh": [22.31292630196666, 114.04024650817476], "Fantasy Gardens": [22.313034815362563, 114.03989311116696], "Wandering Oaken's Sliding Sleighs": [22.313193667414197, 114.03845941488066], "Main Street Vehicles": [22.313286106362384, 114.04347054701648], "Mad Hatter Tea Cups": [22.31347592785585, 114.0397810552361], "Art of Animation": [22.31351457768344, 114.04327705904187], "Animation Academy": [22.313571197827198, 114.04345677277333], "Orbitron": [22.31372622915374, 114.04152453081527], "\"it's a small world\"": [22.313774878283642, 114.03910842079925], "Ant-Man and The Wasp: Nano Battle!": [22.313955111752733, 114.04210605043546], "Hyperspace Mountain": [22.313997279999548, 114.04108000078084], "Hyperspace Mountain Single Rider": [22.313997279999548, 114.04108000078084], "Iron Man Tech Showcase - Presented by Stark Industries": [22.314303361931472, 114.04207527330263], "Iron Man Experience - Presented by AIA": [22.314633489387116, 114.04229344806939], "Wild West Photo Fun": [22.310373463552267, 114.04140795043008], "Geyser Gulch": [22.3103668834166, 114.04136175888456], "Garden of Wonders": [22.31037616273894, 114.0401738641309], "Mystic Point Freight Depot": [22.310488716333897, 114.04073430612682], "Explorer's Club Restaurant": [22.310488716333897, 114.04073430612682], "River View Cafe": [22.310488716333897, 114.04073430612682]};
+let START = ["Ant-Man and The Wasp: Nano Battle!", 22.313955111752733, 114.04210605043546];
+let curRaw = {"Ant-Man and The Wasp: Nano Battle!": 10, "Iron Man Experience - Presented by AIA": 10, "Hyperspace Mountain": 15, "Mad Hatter Tea Cups": 15, "\"it's a small world\"": 5, "Cinderella Carousel": 15, "Frozen Ever After \u2013 Presented by Blue Cross": 20}; const _c={}; for(const k in curRaw) _c[baseName(k)]=curRaw[k]; const cur=_c;
+const excluded = {};
+function norm(n){return (n||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+const CN={}; for(const k in COORDS) CN[norm(k)]=COORDS[k];
+function cFor(n){
+  if(COORDS[n])return COORDS[n];
+  const k=norm(n);
+  if(CN[k])return CN[k];
+  for(const key in COORDS){ if(norm(key)===k) return COORDS[key]; }
+  // n may be a shortened base of a longer COORDS key (e.g. "Iron Man Experience" of "... - Presented by AIA")
+  for(const key in COORDS){ const kk=norm(key); if(kk && kk.startsWith(k) && k.length>=5) return COORDS[key]; }
+  return null;
+}
+function bandOf(w){ if(w==null||w<=0) return '#ffffff'; if(w<15)return '#2fd083'; if(w<30)return '#e8d63a'; if(w<40)return '#f5872a'; if(w<60)return '#e23c3c'; return '#7a0f0f'; }
+function hav(a,b){const R=6371000,la1=a[0]*Math.PI/180,lo1=a[1]*Math.PI/180,la2=b[0]*Math.PI/180,lo2=b[1]*Math.PI/180;const h=Math.sin((la2-la1)/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin((lo2-lo1)/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+const EX=/restaurant|cafe|inn|diner|table|banquet|freight|academy|philharm|meet |duffy|shellie|stellalou|gelatoni|olu|cookieann|linabell|corner|wayfinder|crocus|geyser|garden of|photo|railroad|main street vehicle|single rider|wandering|playhouse|plaza|starliner|explorer|royal/i;
+function baseName(n){ return (n||'').replace(/\s*Single Rider.*$/i,'').replace(/\s*-\s*Presented.*$/i,'').trim(); }
+const riders = []; const seenC = {};
+for(const n in COORDS){ if(EX.test(n))continue; const c=cFor(n); if(!c)continue;
+  const key=(+c[0]).toFixed(5)+','+(+c[1]).toFixed(5); if(seenC[key])continue; seenC[key]=1;
+  riders.push({name:baseName(n), coords:c}); }
+function openRides(){ return riders.filter(r=>(cur[r.name]||0)>0); }   // closed rides are excluded entirely
+
+function computeRoute(caps){
+  let pool=riders.filter(r=>!excluded[r.name] && r.name!==START[0] && (cur[r.name]||0)>0)            .map(r=>({name:r.name, coords:r.coords, wait:(cur[r.name]||0)}));
+  let path=[{name:START[0],wait:cur[START[0]]||0,coords:START.slice(1),d:0}], curp=START.slice(1), tot=0;
+  for(let k=0;k<8;k++){
+    let best=null,bs=null;
+    for(const c of pool){ const d=hav(curp,c.coords); const sc=d+(c.wait<=caps?0:(c.wait-caps)*1800); if(bs==null||sc<bs){bs=sc;best=c;} }
+    if(!best)break; best.d=hav(curp,best.coords); tot+=best.d; path.push(best); curp=best.coords; pool.splice(pool.indexOf(best),1);
+  }
+  return {path:path,tot:tot};
+}
+let map, line, marks=[];
+function render(res){
+  const path=res.path;
+  if(line) map.removeLayer(line);
+  marks.forEach(m=>{try{map.removeLayer(m);}catch(e){}}); marks=[];
+  const ll=path.map((p,i)=>{const c=p.coords;const col=bandOf(p.wait); const mk=L.circleMarker([c[0],c[1]],{radius:i===0?13:9,color:col==='#ffffff'?'#8a94a6':'#fff',weight:2,fillColor:col,fillOpacity:.95});
+    mk.bindPopup('<strong>'+(i+1)+'. '+p.name+'</strong><br><span style="color:'+col+';font-weight:700">'+(p.wait>0?p.wait+' min':'—')+'</span>');
+    mk.addTo(map); marks.push(mk); return [c[0],c[1]];});
+  if(ll.length>1){ line=L.polyline(ll,{color:'#2f6bd8',weight:4,dashArray:'8 6',opacity:.85}).addTo(map); }
+  map.fitBounds(L.latLngBounds(ll),{padding:[38,38]});
+  let totw=0; const rows=path.map((p,i)=>{const col=bandOf(p.wait); totw+=p.wait||0;
+    return '<div class="item"><div class="idx" style="background:'+col+'">'+(i+1)+'</div><div class="ride"><div class="n">'+p.name+'</div><small>'+(i===0?'START (you are here)':'walk '+(p.d/1000).toFixed(2)+' km')+'</small></div><div class="w" style="color:'+col+'">'+(p.wait>0?p.wait+'m':'—')+'</div></div>';});
+  const walkM=res.tot/70, rideMin=path.length*4, tot=Math.round(walkM+totw+rideMin), eta=new Date(Date.now()+tot*60000);
+  document.getElementById('list').innerHTML=rows.join('')+
+    '<div class="foot">Total walk ≈ <b>'+(res.tot/1000).toFixed(2)+' km</b> · '+(path.length-1)+' rides · ≈ <b>'+tot+' min</b> ('+Math.round(walkM)+' walk · '+totw+' queues · '+rideMin+' rides) · finish ~<b>'+eta.toLocaleTimeString()+'</b></div>';
+}
+function refreshRideRows(){
+  const p=document.getElementById('rides');
+  p.innerHTML = openRides().slice().sort((a,b)=>a.name.localeCompare(b.name)).map(r=>{
+    const w=cur[r.name], excl=excluded[r.name];
+    return '<div class="ride'+(excl?' excluded':'')+'"><label><input type="checkbox" '+(excl?'':'checked')+' data-name="'+r.name+'"> '+r.name+'</label><span class="w">'+(w==null?'—':(w>0?w+'m':'closed'))+'</span></div>';
+  }).join('');
+}
+function bindToggles(){
+  document.getElementById('rides').addEventListener('change',function(e){
+    if(e.target.type!=='checkbox')return;
+    const n=e.target.getAttribute('data-name'); if(e.target.checked) delete excluded[n]; else excluded[n]=true;
+    refreshRideRows(); render(computeRoute(15));
+  });
+}
+(function(){
+  const ss=document.getElementById('startSel');
+  function apply(){ const n=ss.value; let c=cFor(n);
+    if(!c){ const r=riders.find(r=>r.name===n); if(r) c=r.coords; }
+    if(c){ START=[n,c[0],c[1]]; }
+    render(computeRoute(15)); refresh();   // ALWAYS recalc + live fetch
+  }
+  window.__recalc = apply;
+  ['change','input','blur'].forEach(function(ev){ ss.addEventListener(ev, apply); });
+  const rb=document.getElementById('recalcBtn');
+  if(rb){ rb.addEventListener('click', function(){ apply(); }); }   // manual force-recalculate
+  // GPS: nearest open ride to the device -> auto-select as start
+  function useMyLocation(){
+    if(!navigator.geolocation){ document.getElementById('locmsg').textContent='GPS not supported'; return; }
+    const msg=document.getElementById('locmsg'); msg.textContent='Locating…';
+    navigator.geolocation.getCurrentPosition(function(pos){
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      let best=null, bd=Infinity;
+      openRides().forEach(function(r){ const d=hav([lat,lng],r.coords); if(d<bd){bd=d;best=r;} });
+      if(best){
+        START=[best.name, best.coords[0], best.coords[1]];
+        document.getElementById('startSel').value=best.name;
+        render(computeRoute(15)); refresh();
+        msg.textContent='📍 '+best.name+' (~'+(bd/1000).toFixed(2)+' km)';
+      } else { msg.textContent='No nearby open ride'; }
+    }, function(err){
+      msg.textContent = err.code===1 ? '📍 GPS denied' : ('📍 GPS: '+err.message);
+    }, {enableHighAccuracy:true, timeout:12000, maximumAge:30000});
+  }
+  const lb=document.getElementById('locBtn');
+  if(lb){ lb.addEventListener('click', useMyLocation); }
+
+})();
+function init(){
+  // start selector
+  const sel=document.getElementById('startSel');
+  sel.innerHTML=openRides().slice().sort((a,b)=>a.name.localeCompare(b.name)).map(r=>'<option value="'+r.name+'"'+(r.name===START[0]?' selected':'')+'>'+r.name+'</option>').join('');
+  refreshRideRows(); bindToggles();
+  map=L.map('map',{zoomControl:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
+  render(computeRoute(15));
+  refresh();   // fetch live data immediately on load
+}
+function refresh(){
+  fetch('/hkdl-wait/api/wait-times',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+    if(d&&Array.isArray(d.rides)){ d.rides.forEach(r=>cur[baseName(r.name)]=r.is_open?r.wait_time:null); refreshRideRows(); render(computeRoute(15)); }
+  }).catch(()=>{});
+}
+init(); setInterval(refresh,60000);
+</script></body></html>
