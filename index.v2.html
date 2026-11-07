@@ -1029,12 +1029,13 @@ function updateHeat(pts){
     if(w>0) dat.push([p.coords[0],p.coords[1],w]);
   });
   if(!heat){
-    heat=L.heatLayer(dat,{radius:22,blur:20,maxZoom:18,minOpacity:.35,
-      gradient:{0.25:'#2fd083',0.5:'#e8d63a',0.67:'#f5872a',0.85:'#e23c3c',1:'#7a0f0f'}});
-    heat.addTo(map);
-  } else {
-    heat.setLatLngs(dat);
-  }
+      heat=L.heatLayer(dat,{radius:22,blur:20,maxZoom:18,minOpacity:.55,
+        gradient:{0.25:'#2fd083',0.5:'#e8d63a',0.67:'#f5872a',0.85:'#e23c3c',1:'#7a0f0f'}});
+      heat.addTo(map);
+      if(heat._canvas) heat._canvas.style.opacity=0.7;  // ~30% transparency to the map
+    } else {
+      heat.setLatLngs(dat);
+    }
   const htg=document.getElementById('heatToggle');
   if(htg && !htg.checked && map.hasLayer(heat)) map.removeLayer(heat);
 }

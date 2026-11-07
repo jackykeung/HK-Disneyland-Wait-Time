@@ -70,12 +70,13 @@ function updateHeat(pts){
     if(w>0) dat.push([p.coords[0],p.coords[1],w]);
   });
   if(!heat){
-    heat=L.heatLayer(dat,{radius:22,blur:20,maxZoom:18,minOpacity:.35,
-      gradient:{0.15:'#2b6cff',0.35:'#3ac6d0',0.55:'#7bd04a',0.75:'#f5b942',0.9:'#f28c28',1:'#ff3d3d'}});
-    heat.addTo(map);
-  } else {
-    heat.setLatLngs(dat);
-  }
+      heat=L.heatLayer(dat,{radius:22,blur:20,maxZoom:18,minOpacity:.55,
+        gradient:{0.25:'#2fd083',0.5:'#e8d63a',0.67:'#f5872a',0.85:'#e23c3c',1:'#7a0f0f'}});
+      heat.addTo(map);
+      if(heat._canvas) heat._canvas.style.opacity=0.7;  // ~30% transparency to the map
+    } else {
+      heat.setLatLngs(dat);
+    }
   const htg=document.getElementById('heatToggle');
   if(htg && !htg.checked && map.hasLayer(heat)) map.removeLayer(heat);
 }
@@ -142,9 +143,7 @@ src = src.replace(a, "    const c=bcol(r.wait_time,r.is_open);\n    const st=r.i
 a = must("<span class=\"pill ${c}\">${r.is_open&&r.wait_time>0?r.wait_time+'m':(r.is_open?'0m':'—')}</span>")
 src = src.replace(a, "<span class=\"pill\" style=\"background:${c==='#ffffff'?'#eef1f5':'#'+c.slice(1)+'22'};color:${c==='#ffffff'?'#8a94a6':c}\">${r.is_open&&r.wait_time>0?r.wait_time+'m':(r.is_open?(r.wait_time===0?'0m':r.wait_time+'m'):'—')}</span>", 1)
 
-# heat gradient anchors aligned to band boundaries (wait 15/30/40/60 => /60)
-a = must("gradient:{0.15:'#2b6cff',0.35:'#3ac6d0',0.55:'#7bd04a',0.75:'#f5b942',0.9:'#f28c28',1:'#ff3d3d'}")
-src = src.replace(a, "gradient:{0.25:'#2fd083',0.5:'#e8d63a',0.67:'#f5872a',0.85:'#e23c3c',1:'#7a0f0f'}", 1)
+# (heat gradient is already band-aligned in the updateHeat block above)
 
 open(OUT, "w").write(src)
 print(f"wrote {OUT}  ({orig_size} -> {len(src)} bytes)")
