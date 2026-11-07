@@ -1,6 +1,9 @@
-# Deployment — HK-Disneyland-Wait-Time (ox dashboard)
+## Deployment — HK-Disneyland-Wait-Time (ox dashboard)
 
-The live dashboard runs on Jacky's **ox** host (dna), gated behind Authelia MFA, with a **same-origin nginx canary** substituting for the repo's stdlib proxy. This is the one place the deployment differs from the repository source.
+The live dashboards run on Jacky's **ox** host (dna), gated behind Authelia MFA, with a **same-origin nginx canary** substituting for the repo's stdlib proxy. This is the one place the deployment differs from the repository source.
+
+- **v1.1.1 (original dashboard):** `https://ox.jackykeung.com/hkdl-wait-times/`
+- **v2.0.0 (crowd heatmap):** `https://ox.jackykeung.com/hkdl-wait-times-v2/` — same auth + no-cache and same feed canary; served from `/var/www/ox/hkdl-wait-times-v2/index.html`, with an nginx `location = /hkdl-wait-times-v2/` (auth_request + no-cache + try_files) mirroring v1. Source: `index.v2.html` (built by `build_v2.py`).
 
 ## Live URL
 - Dashboard: `https://ox.jackykeung.com/hkdl-wait-times/` — **behind Authelia MFA** (unauthenticated → 302 `auth.jackykeung.com/login`).

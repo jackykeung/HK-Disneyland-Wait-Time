@@ -65,6 +65,9 @@ belongs to this project.
 
 ## Changelog
 
+### v2.0.0 — 2026-11-07
+Added a **crowd heatmap layer** (`index.v2.html`): a weighted heat overlay where each ride's heat weight is its current wait time (cool = short wait / low crowd, hot = long wait / high crowd), recomputed every 60 s from the live feed, with a show/hide toggle + gradient legend. The plugin (Leaflet.heat / simpleheat, MIT) is inlined so the page stays a self-contained single file. The original v1.1.1 `index.html` is unchanged; the full history is in [`CHANGELOG.md`](CHANGELOG.md).
+
 ### v1.1.1 — 2026-10-11
 The map now always shows ride pins. Previously markers were drawn only after a
 successful feed fetch, so when the feed was unreachable (or the park closed, and the
